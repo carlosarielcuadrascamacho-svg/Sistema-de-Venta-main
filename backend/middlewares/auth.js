@@ -1,69 +1,54 @@
-// backend/middlewares/auth.js
 const { sso } = require("node-expose-sspi");
 const Usuario = require("../models/Usuario");
-const jwt = require("jsonwebtoken");
 
-// 1. Middleware que le pide al navegador las credenciales de Windows vía SSPI
-const autenticacionWindows = sso.auth();
+// Middleware nativo para forzar autenticación de Windows
+const sspiAuth = sso.auth();
 
-// 2. Middleware que verifica el rol en MongoDB basado en el usuario de Windows
+// Middleware nuestro para verificar que el usuario exista en MongoDB
 const verificarUsuarioLocal = async (req, res, next) => {
-  // node-expose-sspi inyecta el objeto sso en la request
-  if (!req.sso || !req.sso.user || !req.sso.user.name) {
-    return res
-      .status(401)
-      .json({ error: "No se detectó una sesión activa de Windows." });
-  }
-
-  // Extraemos el nombre de usuario (usualmente viene como DOMINIO\usuario)
-  // Nos quedamos solo con el nombre de usuario y lo pasamos a minúsculas
-  let usernameWindows = req.sso.user.name.toLowerCase();
-  if (usernameWindows.includes("\\")) {
-    usernameWindows = usernameWindows.split("\\")[1];
-  }
-
   try {
-    // Buscamos si ese usuario de Windows tiene permisos en nuestro sistema
-    const usuarioDB = await Usuario.findOne({ username: usernameWindows });
-
-    if (!usuarioDB) {
-      return res
-        .status(403)
-        .json({
-          error: `Acceso denegado: El usuario de Windows '${usernameWindows}' no está registrado en el POS.`,
-        });
+    // 1. Validar que SSPI haya detectado la sesión de Windows
+    if (!req.sspi || !req.sspi.user) {
+      return res.status(401).json({ error: "No autenticado en Windows" });
     }
 
-    // Si existe, lo guardamos en la request para que los controladores lo usen
-    req.usuario = {
-      id: usuarioDB._id,
-      nombre: usuarioDB.nombre,
-      username: usernameWindows,
-      rol: usuarioDB.rol,
-    };
+    // 2. Extraer el usuario (Viene como "DESKTOP-TCBRH6I\Carlos")
+    const windowsUserFull = req.sspi.user.name;
 
+    // 3. Limpiarlo: cortamos por la "\" y tomamos la última parte en minúsculas -> "carlos"
+    const partes = windowsUserFull.split("\\");
+    const usernameLimpio = partes[partes.length - 1].toLowerCase();
+
+    // 4. Buscarlo en nuestra base de datos de Mongo
+    const usuarioDB = await Usuario.findOne({ username: usernameLimpio });
+
+    if (!usuarioDB) {
+      console.log(
+        `[SSO Bloqueado] Windows dio: ${windowsUserFull} | Buscado como: ${usernameLimpio}`,
+      );
+      return res
+        .status(403)
+        .json({ error: "Tu usuario de Windows no está registrado en el POS." });
+    }
+
+    // 5. Si existe, guardamos sus datos para pasarlos al siguiente paso
+    req.user = usuarioDB;
     next();
   } catch (error) {
-    console.error("Error en verificarUsuarioLocal:", error);
-    res
-      .status(500)
-      .json({ error: "Error interno al verificar el usuario de Windows." });
+    console.error("Error en verificación de Windows:", error);
+    res.status(500).json({ error: "Error interno al validar sesión" });
   }
 };
 
-// 3. El mismo verificador de roles que ya teníamos
 const verificarRol = (rolesPermitidos) => {
   return (req, res, next) => {
-    if (!rolesPermitidos.includes(req.usuario.rol)) {
+    if (!req.user || !rolesPermitidos.includes(req.user.rol)) {
       return res
         .status(403)
-        .json({
-          error:
-            "Acceso denegado. Tu rol de Windows no tiene permisos para realizar esta acción.",
-        });
+        .json({ error: "Acceso denegado. Rol insuficiente." });
     }
     next();
   };
 };
 
-module.exports = { autenticacionWindows, verificarUsuarioLocal, verificarRol };
+module.exports = { sspiAuth, verificarUsuarioLocal, verificarRol };

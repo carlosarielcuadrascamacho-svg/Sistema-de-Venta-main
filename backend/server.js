@@ -9,7 +9,7 @@ const connectDB = require("./config/database.js");
 const app = express();
 
 const {
-  autenticacionWindows,
+  sspiAuth: autenticacionWindows,
   verificarUsuarioLocal,
 } = require("./middlewares/auth");
 
@@ -24,7 +24,7 @@ app.use(
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true, // <-- CRÍTICO para recibir el ticket de Windows
-  })
+  }),
 );
 
 app.use(express.json());
@@ -70,5 +70,7 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[Servidor] Ejecutándose en puerto ${PORT}`);
-  console.log(`[Red Local] Acceso web: http://${process.env.SERVER_HOSTNAME || 'localhost'}:${PORT}`);
+  console.log(
+    `[Red Local] Acceso web: http://${process.env.SERVER_HOSTNAME || "localhost"}:${PORT}`,
+  );
 });

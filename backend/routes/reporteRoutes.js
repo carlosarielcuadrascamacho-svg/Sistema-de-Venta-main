@@ -1,19 +1,24 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
+// Importa tus funciones del controlador (asegúrate de que los nombres coincidan con tu archivo real)
+const {
+  ventasPorDia,productosMasVendidos,
+} = require("../controllers/reporteController");
+const { verificarUsuarioLocal, verificarRol } = require("../middlewares/auth");
 
-// 1. Importamos todas las funciones de un solo golpe
-const { ventasPorDia, productosMasVendidos, resumenDashboard } = require('../controllers/reporteController');
-const { verificarRol } = require('../middlewares/auth');
+// Todas las rutas de reportes requieren estar logueado
+router.use(verificarUsuarioLocal);
 
-// 2. RUTA GENERAL (El Dashboard)
-// Esta ruta va arriba para que todos los que inicien sesión (Cajeros y Admins) puedan ver la pantalla de Inicio
-router.get('/resumen', resumenDashboard);
-
-// 3. RUTAS PROTEGIDAS (Las gráficas)
-// El "Cadenero" entra en acción: A partir de esta línea, todo exige ser Administrador
-router.use(verificarRol(['Administrador']));
-
-router.get('/ventas-dia', ventasPorDia);
-router.get('/top-productos', productosMasVendidos);
+// Agregamos "Cajero" al arreglo de roles permitidos para que el backend los deje pasar
+router.get(
+  "/ventas",
+  verificarRol(["Administrador", "Cajero"]),
+  ventasPorDia,
+);
+router.get(
+  "/top-productos",
+  verificarRol(["Administrador", "Cajero"]),
+  productosMasVendidos,
+);
 
 module.exports = router;
